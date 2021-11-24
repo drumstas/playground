@@ -1,0 +1,231 @@
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - uat
+  pull_request:
+
+name: 'Plan & apply'
+
+env:
+  AWS_REGION: eu-west-2
+  TGENV_AUTO_INSTALL: true
+permissions:
+  id-token: write
+  contents: read
+
+
+jobs:
+  setup:
+    name: Pipeline Configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set steps.target_push.outputs.target_push
+        id: target_push
+        if: github.event_name == 'push' && (endsWith(github.ref, '/main') || endsWith(github.ref, '/dev') || endsWith(github.ref, '/uat'))
+        run: echo "::set-output name=target_push::true"
+      - name: Set TF_ENV=dev for branch dev
+        if: |
+          (github.event_name == 'push' && endsWith(github.ref, '/dev')) ||
+          (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'dev')
+        run: echo "TF_ENV=dev" >> $GITHUB_ENV
+      - name: Set TF_ENV=uat for branch uat
+        if: |
+          (github.event_name == 'push' && endsWith(github.ref, '/uat')) ||
+          (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'uat')
+        run: echo "TF_ENV=uat" >> $GITHUB_ENV
+      - name: Set TF_ENV=live for branch main
+        if: |
+          (github.event_name == 'push' && endsWith(github.ref, '/main')) ||
+          (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main')
+        run: echo "TF_ENV=live" >> $GITHUB_ENV
+      - name: Set steps.tf_env.outputs.tf_env based on $TF_ENV
+        id: tf_env
+        run: echo "::set-output name=tf_env::$TF_ENV"
+    outputs:
+      target_push: ${{steps.target_push.outputs.target_push}}
+      tf_env: ${{steps.tf_env.outputs.tf_env}}
+
+  linting:
+    name: Tests & Checks & Validate
+    runs-on: ubuntu-latest
+    needs: setup
+    container:
+      image: eldertech/terragrunt-runner:1.0.1
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: tfenv install
+        run: tfenv install
+      - name: Terraform fmt
+        id: fmt
+        run: |
+          if [ $(terraform fmt | grep -v .terraform | tee fmt_result.txt | wc -l) -gt 0 ]; then
+            echo "Format of this terraform files is not appropiate:"
+            echo
+
+            cat fmt_result.txt
+            rm fmt_result.txt
+            git checkout -- .
+
+            echo
+            echo "Please run terraform fmt"
+
+            exit 1
+          fi
+
+      - name: Run tfsec
+        run: |
+          rm -rf init/
+          tfsec
+
+  terragrunt:
+    name: Terragrunt plan
+    runs-on: ubuntu-latest
+    needs: [setup, linting]
+    container:
+      image: eldertech/terragrunt-runner:1.0.1
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials for DEV PLAN
+        if: |
+          (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'dev')
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.DEV_PLAN_ROLE_ARN }}
+          aws-region: eu-west-2
+      - name: Configure AWS Credentials for UAT PLAN
+        if: |
+          (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'uat')
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.UAT_PLAN_ROLE_ARN }}
+          aws-region: eu-west-2
+      - name: Configure AWS Credentials for Main PLAN
+        if: |
+          (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main')
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.LIVE_PLAN_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - name: Configure AWS Credentials for DEV DEPLOY
+        if: |
+          (github.event_name == 'push' && endsWith(github.ref, '/dev'))
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.DEV_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-2
+      - name: Configure AWS Credentials for UAT DEPLOY
+        if: |
+          (github.event_name == 'push' && endsWith(github.ref, '/uat'))
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.UAT_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-2
+      - name: Configure AWS Credentials for Main DEPLOY
+        if: |
+          (github.event_name == 'push' && endsWith(github.ref, '/main'))
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.LIVE_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - name: tfenv install
+        run: tfenv install
+
+      - name: Configure Terraform Cloud Credentials
+        run:  |
+          echo "credentials \"app.terraform.io\" {token = \"$tf_api_token\"}" > $HOME/.terraformrc
+        env:
+          tf_api_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Run plan-all
+        id: plan
+        run: |
+          cd terraform/${{needs.setup.outputs.tf_env}}/
+          terragrunt run-all plan -input=false -no-color --terragrunt-log-level info --terragrunt-non-interactive 2>&1 | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' | tee terraform-plan.txt
+
+      - name: Archive plan
+        uses: actions/upload-artifact@v2
+        with:
+          name: tfplan
+          path: terraform/${{needs.setup.outputs.tf_env}}/terraform-plan.txt
+          retention-days: 1
+
+  danger:
+    name: Danger
+    needs: [setup, terragrunt]
+    if: ${{ needs.setup.outputs.target_push == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 100
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6 # Not needed with a .ruby-version file
+          bundler-cache: true # runs 'bundle install' and caches installed gems automatically
+      - name: Download plan artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: tfplan
+      - name: danger
+        env:
+          DANGER_GITHUB_API_TOKEN: ${{ secrets.DANGER_GITHUB_TOKEN }}
+        run: bundle exec danger --verbose
+
+  terragrunt_apply:
+    name: Terragrunt apply
+    runs-on: ubuntu-latest
+    needs: [setup, terragrunt]
+    if: ${{ needs.setup.outputs.target_push }}
+    container:
+      image: eldertech/terragrunt-runner:1.0.1
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials for DEV
+        if: |
+          (github.event_name == 'push' && endsWith(github.ref, '/dev')) ||
+          (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'dev')
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.DEV_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-2
+      - name: Configure AWS Credentials for UAT
+        if: |
+          (github.event_name == 'push' && endsWith(github.ref, '/uat')) ||
+          (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'uat')
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.UAT_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-2
+      - name: Configure AWS Credentials for Main
+        if: |
+          (github.event_name == 'push' && endsWith(github.ref, '/main')) ||
+          (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main')
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.LIVE_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - name: tfenv install
+        run: tfenv install
+
+      - name: Configure Terraform Cloud Credentials
+        run:  |
+          echo "credentials \"app.terraform.io\" {token = \"$tf_api_token\"}" > $HOME/.terraformrc
+        env:
+          tf_api_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terragrunt Apply
+        if: needs.setup.outputs.target_push
+        run: |
+          cd terraform/${{needs.setup.outputs.tf_env}}/
+          terragrunt run-all apply --terragrunt-non-interactive -auto-approve -input=false

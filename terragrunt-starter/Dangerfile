@@ -1,0 +1,53 @@
+# Add Terraform Plan output to the PR to be reviewed
+def label_plan_summary()
+    file_name = "terraform-plan.txt"
+    data = File.read(file_name)
+    markdownBody = "```" + data + "```"
+    markdown "# Terraform Plan"
+    markdown(markdownBody)
+
+    if !(data.include? "0 to destroy")
+        warn "Resources are being destroyed by terraform"
+    end
+
+    if (data.include? "exit status 1")
+      fail "Plan failed to build some stacks"
+    end
+
+    if(data.include? "Hit multiple errors:")
+      fail "Terragrunt had multiple errors"
+    end
+
+    if(data.include? "Call to function \"sops_decrypt_file\" failed: Failed to verify data integrity.")
+        fail "SOPS Failed to decrypt secrets file"
+    end
+
+    if(data.include? "level=error")
+      fail "Error level messages have been thrown from terragrunt"
+    end
+end
+
+label_plan_summary()
+
+# Make sure its supposed to be going to staging
+message "Your pull request is on the `master` branch. Are you sure you don't want to be merging to `staging`?" if github.branch_for_base == 'master'
+
+if git.commits.any? { |c| c.message =~ /^Merge branch 'master'/ }
+  warn "It looks like you merged from master in this pull request. Please [rebase](https://help.github.com/articles/about-git-rebase/) to get rid of the merge commits -- you may want to [rewind the master branch and rebase]"
+end
+
+if git.commits.any? { |c| c.message =~ /^Merge branch 'dev'/ }
+  warn "It looks like you merged from staging in this pull request. Please [rebase](https://help.github.com/articles/about-git-rebase/) to get rid of the merge commits -- you may want to [rewind the master branch and rebase]"
+end
+
+if git.commits.any? { |c| c.message =~ /^Merge branch 'uat'/ }
+  warn "It looks like you merged from uat in this pull request. Please [rebase](https://help.github.com/articles/about-git-rebase/) to get rid of the merge commits -- you may want to [rewind the master branch and rebase]"
+end
+
+# Just to let people know
+warn("PR is classed as Work in Progress") if github.pr_title.include? "WIP"
+
+# Warn when RDS has been changed added
+if git.added_files.any? { |files| files.start_with? "modules/rds/" }
+  warn "RDS Configuration has been changed - make sure it isn't deleting RDS instances."
+end

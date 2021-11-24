@@ -1,0 +1,6 @@
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:14.3:///integration-tests-db
+    driverClassName: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    spring.jpa.database-platform: org.hibernate.dialect.PostgreSQL10Dialect

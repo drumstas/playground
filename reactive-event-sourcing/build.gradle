@@ -1,0 +1,49 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.2.4'
+	id 'io.spring.dependency-management' version '1.1.4'
+}
+
+group = 'reactive.event.sourcing'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	sourceCompatibility = '21'
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	akka_version = '2.7.0'
+	scala_binary_version = '2.13'
+	slick_version = '3.3.3'
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter'
+
+	implementation 'io.vavr:vavr:0.10.4'
+	implementation 'org.postgresql:postgresql'
+
+	implementation "com.typesafe.akka:akka-actor-typed_$scala_binary_version:$akka_version"
+	implementation "com.typesafe.akka:akka-cluster-typed_$scala_binary_version:$akka_version"
+	implementation "com.typesafe.akka:akka-cluster-sharding-typed_$scala_binary_version:$akka_version"
+	implementation "com.typesafe.akka:akka-persistence-typed_$scala_binary_version:$akka_version"
+	implementation "com.typesafe.akka:akka-slf4j_$scala_binary_version:$akka_version"
+	implementation "com.lightbend.akka:akka-persistence-jdbc_$scala_binary_version:5.2.1"
+
+	implementation "com.typesafe.slick:slick_$scala_binary_version:$slick_version"
+	implementation "com.typesafe.slick:slick-hikaricp_$scala_binary_version:$slick_version"
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.assertj:assertj-core:3.25.3'
+
+	testImplementation "com.typesafe.akka:akka-actor-testkit-typed_$scala_binary_version:$akka_version"
+	testImplementation "com.typesafe.akka:akka-persistence-testkit_$scala_binary_version:$akka_version"
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
