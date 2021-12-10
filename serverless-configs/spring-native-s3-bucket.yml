@@ -1,0 +1,59 @@
+service: tv4mediaprovider-ws
+
+custom: ${file(./src/main/resources/application.yml)}
+
+package:
+  artifact: target/SNAPSHOT-shaded.jar
+
+provider:
+  name: aws
+  runtime: java11
+  stage: dev
+  region: ${self:custom.aws.region}
+  memorySize: 1024
+  timeout: 15
+  lambdaHashingVersion: 20201221
+  iamRoleStatements:
+    - Effect: 'Allow'
+      Action:
+        - 's3:*'
+      Resource:
+        - 'arn:aws:s3:::${self:custom.aws.bucket}'
+        - 'arn:aws:s3:::${self:custom.aws.bucket}/*'
+
+functions:
+  upload:
+    handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker
+    events:
+      - httpApi:
+          method: post
+          path: /upload
+    environment:
+      SPRING_CLOUD_FUNCTION_DEFINITION: upload
+
+  consumeSchedule:
+    handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker
+    events:
+      - s3:
+          bucket: '${self:custom.aws.bucket}'
+          event: 's3:ObjectCreated:*'
+          rules:
+            - prefix: 'folder/prefix'
+          existing: true
+    environment:
+      SPRING_CLOUD_FUNCTION_DEFINITION: consume
+
+resources:
+  Resources:
+    UploadBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: '${self:custom.aws.bucket}'
+        AccessControl: Private
+        VersioningConfiguration:
+          Status: Enabled
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
