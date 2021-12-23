@@ -1,6 +1,6 @@
-service: tv4mediaprovider-ws
+service: my-service
 
-custom: ${file(./src/main/resources/application.yml)}
+custom: ${file(./src/main/resources/application-serverless.yml)}
 
 package:
   artifact: target/SNAPSHOT-shaded.jar
@@ -20,6 +20,13 @@ provider:
       Resource:
         - 'arn:aws:s3:::${self:custom.aws.bucket}'
         - 'arn:aws:s3:::${self:custom.aws.bucket}/*'
+    - Effect: 'Allow'
+      Action:
+        - 'sqs:SendMessage'
+        - 'sqs:GetQueueUrl'
+        - 'sqs:ListQueues'
+      Resource:
+        - !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${self:custom.aws.queue}'
 
 functions:
   upload:
@@ -31,7 +38,7 @@ functions:
     environment:
       SPRING_CLOUD_FUNCTION_DEFINITION: upload
 
-  consumeSchedule:
+  consume:
     handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker
     events:
       - s3:
@@ -42,6 +49,18 @@ functions:
           existing: true
     environment:
       SPRING_CLOUD_FUNCTION_DEFINITION: consume
+
+  send:
+    handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker
+    events:
+      - s3:
+          bucket: '${self:custom.aws.bucket}'
+          event: 's3:ObjectCreated:Put'
+          rules:
+            - prefix: 'folder/another-prefix/'
+          existing: true
+    environment:
+      SPRING_CLOUD_FUNCTION_DEFINITION: sendToSQS
 
 resources:
   Resources:
@@ -57,3 +76,8 @@ resources:
           BlockPublicPolicy: true
           IgnorePublicAcls: true
           RestrictPublicBuckets: true
+    DataQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.aws.queue}
+        FifoQueue: true
