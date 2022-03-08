@@ -1,0 +1,43 @@
+name: Create and merge PR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  do-stuff:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      ### Do any needed changes here
+      # - name: Add some text in a file
+      #   run: echo 123 >> text.txt
+
+      # If branch protection rules are enabled and some checks are needed for merge use a personal REPO_SCOPED_TOKEN, otherwise use GITHUB_TOKEN for all further actions.
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v3
+        with:
+          branch: auto-branch
+          token: ${{ secrets.REPO_SCOPED_TOKEN }}
+
+      - name: Wait for pull request check
+        uses: fountainhead/action-wait-for-check@v1.0.0
+        with:
+          token: ${{ secrets.REPO_SCOPED_TOKEN }}
+          ref: ${{ steps.cpr.outputs.pull-request-head-sha }}
+          checkName: check # your custom check name
+
+      - name: Merge pull request
+        uses: juliangruber/merge-pull-request-action@v1
+        with:
+          github-token: ${{ secrets.REPO_SCOPED_TOKEN }}
+          number: ${{ steps.cpr.outputs.pull-request-number }}
+          method: squash
+
+      - name: Delete branch
+        uses: dawidd6/action-delete-branch@v3
+        with:
+          github_token: ${{ secrets.REPO_SCOPED_TOKEN }}
+          branches: auto-branch
