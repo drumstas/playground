@@ -1,0 +1,45 @@
+name: Check PR
+
+on: pull_request
+
+jobs:
+  determine_pr:
+    runs-on: ubuntu-20.04
+    outputs:
+      is_light: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@v3.4.1
+        with:
+          paths: '["src/**", "graal/**", "pom.xml", "Dockerfile", "**.sh"]'
+
+  light:
+    runs-on: ubuntu-20.04
+    needs: determine_pr
+    if: needs.determine_pr.outputs.is_light == 'true'
+    steps:
+      - run: echo Done!
+
+  heavy:
+    needs: determine_pr
+    if: needs.determine_pr.outputs.is_light != 'true'
+    uses: TV4/tv4mediaprovider-ws/.github/workflows/pull-request-heavy.yml@main
+    secrets:
+      telia_maven_password: ${{ secrets.ORG_JFROG_ARTIFACTORY_GITHUBACTIONS_APIKEY }}
+
+  check:
+    runs-on: ubuntu-20.04
+    needs:
+      - light
+      - heavy
+    if: always()
+    steps:
+      - name: Try to fail
+        if: needs.light.result == 'failure' || needs.heavy.result == 'failure'
+        run: exit 1
+
+      - name: Succeed
+        run: exit 0
+
+
+

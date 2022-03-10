@@ -1,0 +1,58 @@
+name: Check PR - Heavy
+
+on:
+  workflow_call:
+    secrets:
+      telia_maven_password:
+        required: true
+
+env:
+  TELIA_MAVEN_USERNAME: githubactions
+  TELIA_MAVEN_PASSWORD: ${{ secrets.telia_maven_password }}
+
+jobs:
+  unit-test:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v2
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+          server-id: telia-libs-release
+          server-username: TELIA_MAVEN_USERNAME
+          server-password: TELIA_MAVEN_PASSWORD
+
+      - name: Test
+        run: mvn clean test
+
+  integration-test:
+    runs-on: ubuntu-20.04
+    needs: unit-test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v2
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+          server-id: telia-libs-release
+          server-username: TELIA_MAVEN_USERNAME
+          server-password: TELIA_MAVEN_PASSWORD
+
+      - name: Setup GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          version: 22.0.0.2
+          java-version: 17
+          components: native-image
+
+      - name: Native Integration Test
+        run: mvn clean test -P native
