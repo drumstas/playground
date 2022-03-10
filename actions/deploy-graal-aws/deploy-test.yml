@@ -1,0 +1,26 @@
+name: Deploy --- IPTVTEST5
+
+on: workflow_dispatch
+
+jobs:
+  generate_version:
+    runs-on: ubuntu-20.04
+    outputs:
+      version: ${{ steps.set-outputs.outputs.version }}
+    steps:
+      - name: Setup version outputs
+        id: set-outputs
+        run: |
+          echo "::set-output name=version::$(date +%Y%m%d%H%M%S)"
+
+  iptv_test5:
+    needs: generate_version
+    uses: TV4/tv4mediaprovider-ws/.github/workflows/deploy.yml@main
+    with:
+      revision: ${{ needs.generate_version.outputs.version }}
+      stage_profile: iptvtest5
+    secrets:
+      aws_api_key: ${{ secrets.AWS_API_KEY }}
+      aws_access_key: ${{ secrets.AWS_IPTVTEST5_ACCESS_KEY_ID }}
+      aws_secret_key: ${{ secrets.AWS_IPTVTEST5_SECRET_ACCESS_KEY }}
+      telia_maven_password: ${{ secrets.ORG_JFROG_ARTIFACTORY_GITHUBACTIONS_APIKEY }}

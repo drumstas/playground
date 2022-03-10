@@ -1,0 +1,84 @@
+name: Deploy --- PROD
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        type: choice
+        required: true
+        description: Version bump
+        options: [ feature, bug, major ]
+        default: feature
+
+jobs:
+  resolve_version:
+    runs-on: ubuntu-20.04
+    outputs:
+      next_version: ${{ steps.set-outputs.outputs.next_version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v2
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Get latest release
+        id: latest_release
+        uses: kaliber5/action-get-release@v1
+        with:
+          token: ${{ github.token }}
+          latest: true
+
+      - name: Resolve new version
+        id: bump_version
+        uses: christian-draeger/increment-semantic-version@1.0.2
+        with:
+          current-version: ${{ steps.latest_release.outputs.tag_name }}
+          version-fragment: ${{ github.event.inputs.version }}
+      - name: Setup version outputs
+        id: set-outputs
+        run: |
+          echo "::set-output name=next_version::${{ steps.bump_version.outputs.next-version }}"
+
+  prod:
+    needs: resolve_version
+    uses: TV4/tv4mediaprovider-ws/.github/workflows/deploy.yml@main
+    with:
+      revision: ${{ needs.resolve_version.outputs.next_version }}
+      stage_profile: prod
+    secrets:
+      aws_api_key: ${{ secrets.AWS_API_KEY }}
+      aws_access_key: ${{ secrets.AWS_PROD_ACCESS_KEY_ID }}
+      aws_secret_key: ${{ secrets.AWS_PROD_SECRET_ACCESS_KEY }}
+      telia_maven_password: ${{ secrets.ORG_JFROG_ARTIFACTORY_GITHUBACTIONS_APIKEY }}
+
+  release:
+    runs-on: ubuntu-20.04
+    needs:
+      - resolve_version
+      - prod
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: artifacts/
+
+      - name: Copy artifacts to target
+        run: |
+          mkdir target
+          cp artifacts/*/* target/
+
+      - name: Create release entry
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: target/*
+          tag: ${{ needs.resolve_version.outputs.next_version }}
+
+
+
+
+

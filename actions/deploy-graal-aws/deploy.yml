@@ -1,0 +1,118 @@
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      stage_profile:
+        required: true
+        type: string
+    secrets:
+      aws_api_key:
+        required: true
+      aws_access_key:
+        required: true
+      aws_secret_key:
+        required: true
+      telia_maven_password:
+        required: true
+
+env:
+  TELIA_MAVEN_USERNAME: githubactions
+  TELIA_MAVEN_PASSWORD: ${{ secrets.telia_maven_password }}
+
+jobs:
+  package:
+    runs-on: ubuntu-20.04
+    outputs:
+      artifact: ${{ steps.set-outputs.outputs.artifact }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v2
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+          server-id: telia-libs-release
+          server-username: TELIA_MAVEN_USERNAME
+          server-password: TELIA_MAVEN_PASSWORD
+
+      - name: Package
+        run: mvn -Drevision=${{ inputs.revision }} package -Pshaded -DskipTests
+
+      - name: Put artifact name into current context
+        run: |
+          JAR_NAME=$(mvn -Drevision=${{ inputs.revision }} help:evaluate -Dexpression=project.build.finalName -q -DforceStdout)-shaded.jar
+          echo "ARTIFACT_NAME=$JAR_NAME" >> $GITHUB_ENV
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: target/${{ env.ARTIFACT_NAME }}
+          if-no-files-found: error
+
+      - name: Setup job outputs
+        id: set-outputs
+        run: |
+          echo "::set-output name=artifact::${{ env.ARTIFACT_NAME }}"
+
+  build-image:
+    runs-on: ubuntu-20.04
+    needs: package
+    outputs:
+      artifact: ${{ steps.set-outputs.outputs.artifact }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{ needs.package.outputs.artifact }}
+          path: target/
+
+      - name: Build native image zip
+        run: ./build-native-zip.sh -p ${{ inputs.stage_profile }} -j ${{ needs.package.outputs.artifact }}
+
+      - name: Upload native ZIP artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: lambda.zip
+          path: target/lambda.zip
+          if-no-files-found: error
+
+      - name: Setup job outputs
+        id: set-outputs
+        run: |
+          echo "::set-output name=artifact::lambda.zip"
+
+  deploy:
+    runs-on: ubuntu-20.04
+    needs:
+      - build-image
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Download native ZIP artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{ needs.build-image.outputs.artifact }}
+          path: target/
+
+      - name: Deploy to AWS using Serverless
+        uses: serverless/github-action@v2
+        with:
+          args: -c "serverless plugin install --name serverless-certificate-creator --stage ${{ inputs.stage_profile }} && serverless plugin install --name serverless-domain-manager --stage ${{ inputs.stage_profile }} && serverless deploy --stage ${{ inputs.stage_profile }} --verbose"
+          entrypoint: /bin/sh
+        env:
+          AWS_API_KEY: ${{ secrets.aws_api_key }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.aws_access_key }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_key }}
+          SLS_DEBUG: '*'
