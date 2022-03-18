@@ -23,7 +23,7 @@ jobs:
   heavy:
     needs: determine_pr
     if: needs.determine_pr.outputs.is_light != 'true'
-    uses: TV4/tv4mediaprovider-ws/.github/workflows/pull-request-heavy.yml@main
+    uses: drumstas/playground/.github/workflows/pull-request-heavy.yml@main
     secrets:
       telia_maven_password: ${{ secrets.ORG_JFROG_ARTIFACTORY_GITHUBACTIONS_APIKEY }}
 
