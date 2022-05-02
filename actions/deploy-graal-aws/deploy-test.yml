@@ -15,7 +15,7 @@ jobs:
 
   iptv_test5:
     needs: generate_version
-    uses: TV4/tv4mediaprovider-ws/.github/workflows/deploy.yml@main
+    uses: drumstas/playground/.github/workflows/deploy.yml@main
     with:
       revision: ${{ needs.generate_version.outputs.version }}
       stage_profile: iptvtest5
