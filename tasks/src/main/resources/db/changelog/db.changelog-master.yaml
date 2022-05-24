@@ -1,0 +1,55 @@
+databaseChangeLog:
+  - changeSet:
+      id: create_tasks_sequence
+      author: donatas
+      changes:
+        - createSequence:
+            sequenceName: seq_tasks_id
+            dataType: bigint
+            incrementBy: 1
+            startValue: 1
+  - changeSet:
+      id: create_tasks_table
+      author: donatas
+      changes:
+        - createTable:
+            tableName: tasks
+            columns:
+              - column:
+                  name: id
+                  type: bigint
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: task_type
+                  type: varchar(10)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: varchar(50)
+              - column:
+                  name: status
+                  type: varchar(10)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: seconds_spent
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: task_group
+                  type: varchar(10)
+              - column:
+                  name: assignee
+                  type: varchar(20)
+              - column:
+                  name: main_task_id
+                  type: bigint
