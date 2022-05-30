@@ -16,12 +16,12 @@ on:
         required: true
       aws_secret_key:
         required: true
-      telia_maven_password:
+      maven_password:
         required: true
 
 env:
-  TELIA_MAVEN_USERNAME: githubactions
-  TELIA_MAVEN_PASSWORD: ${{ secrets.telia_maven_password }}
+  MAVEN_USERNAME: githubactions
+  MAVEN_PASSWORD: ${{ secrets.maven_password }}
 
 jobs:
   package:
@@ -39,8 +39,8 @@ jobs:
           java-version: 17
           cache: maven
           server-id: telia-libs-release
-          server-username: TELIA_MAVEN_USERNAME
-          server-password: TELIA_MAVEN_PASSWORD
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
 
       - name: Package
         run: mvn -Drevision=${{ inputs.revision }} package -Pshaded -DskipTests

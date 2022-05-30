@@ -23,4 +23,4 @@ jobs:
       aws_api_key: ${{ secrets.AWS_API_KEY }}
       aws_access_key: ${{ secrets.AWS_IPTVTEST5_ACCESS_KEY_ID }}
       aws_secret_key: ${{ secrets.AWS_IPTVTEST5_SECRET_ACCESS_KEY }}
-      telia_maven_password: ${{ secrets.ORG_JFROG_ARTIFACTORY_GITHUBACTIONS_APIKEY }}
+      maven_password: ${{ secrets.ORG_JFROG_ARTIFACTORY_GITHUBACTIONS_APIKEY }}

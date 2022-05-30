@@ -25,7 +25,7 @@ jobs:
     if: needs.determine_pr.outputs.is_light != 'true'
     uses: drumstas/playground/.github/workflows/pull-request-heavy.yml@main
     secrets:
-      telia_maven_password: ${{ secrets.ORG_JFROG_ARTIFACTORY_GITHUBACTIONS_APIKEY }}
+      maven_password: ${{ secrets.ORG_JFROG_ARTIFACTORY_GITHUBACTIONS_APIKEY }}
 
   check:
     runs-on: ubuntu-20.04
