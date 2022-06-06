@@ -1,0 +1,41 @@
+service: my-application
+
+custom:
+  application: ${file(./src/main/resources/application-serverless.yml)}
+
+provider:
+  name: aws
+  stage: ${opt:stage}
+  region: ${self:custom.application.aws.region}
+  timeout: 5
+  memorySize: 512
+  ecr:
+    images:
+      application:
+        path: ./
+        file: alpine.Dockerfile
+        buildArgs:
+          PROFILE: ${self:provider.stage}
+          JAR: ${param:jar}
+
+functions:
+  hello:
+    image: application
+    events:
+      - http:
+          method: post
+          path: /hello
+    environment:
+      SPRING_CLOUD_FUNCTION_DEFINITION: helloFunction
+
+  world:
+    image: application
+    events:
+      - s3:
+          bucket: '${self:provider.stage}-${self:custom.application.aws.bucket}'
+          event: 's3:ObjectCreated:Put'
+          rules:
+            - prefix: 'application/files'
+          existing: true
+    environment:
+      SPRING_CLOUD_FUNCTION_DEFINITION: worldFunction

@@ -1,0 +1,82 @@
+name: Docker Deploy --- TEST
+
+on: workflow_dispatch
+
+env:
+  stage_profile: test
+
+jobs:
+  generate_version:
+    runs-on: ubuntu-20.04
+    outputs:
+      version: ${{ steps.set-outputs.outputs.version }}
+    steps:
+      - name: Setup version outputs
+        id: set-outputs
+        run: |
+          echo "::set-output name=version::$(date +%Y%m%d%H%M%S)"
+
+  package:
+    runs-on: ubuntu-20.04
+    needs: generate_version
+    outputs:
+      artifact: ${{ steps.set-outputs.outputs.artifact }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v2
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+          server-id: my-maven-repo
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+        env:
+          MAVEN_USERNAME: maven_user
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+
+      - name: Package
+        run: mvn -Drevision=${{ needs.generate_version.outputs.version }} package -DskipTests
+
+      - name: Put artifact name into current context
+        run: |
+          JAR_NAME=$(mvn -Drevision=${{ needs.generate_version.outputs.version }} help:evaluate -Dexpression=project.build.finalName -q -DforceStdout)-shaded.jar
+          echo "ARTIFACT_NAME=$JAR_NAME" >> $GITHUB_ENV
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: target/${{ env.ARTIFACT_NAME }}
+          if-no-files-found: error
+
+      - name: Setup job outputs
+        id: set-outputs
+        run: |
+          echo "::set-output name=artifact::${{ env.ARTIFACT_NAME }}"
+
+  deploy:
+    runs-on: ubuntu-20.04
+    needs:
+      - package
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Download JAR  artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{ needs.package.outputs.artifact }}
+          path: target/
+
+      - name: Install Serverless dependencies
+        run: npm install --also=dev
+
+      - name: Deploy to AWS using Serverless
+        run: node ./node_modules/serverless/bin/serverless deploy --config serverless-docker.yml --stage ${{ env.stage_profile }} --param="jar=${{ needs.package.outputs.artifact }}" --verbose
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_TEST_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_TEST_SECRET_ACCESS_KEY }}
