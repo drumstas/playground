@@ -1,1 +1,0 @@
-Example taken from https://rieckpil.de/java-aws-lambda-with-spring-cloud-function/
